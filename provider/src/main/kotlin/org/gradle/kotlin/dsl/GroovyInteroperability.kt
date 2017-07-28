@@ -23,6 +23,8 @@ import groovy.lang.MetaClass
 import org.gradle.internal.Cast.uncheckedCast
 
 import org.codehaus.groovy.runtime.InvokerHelper.getMetaClass
+import org.gradle.api.internal.HasConvention
+import kotlin.reflect.KClass
 
 
 /**
@@ -121,6 +123,14 @@ operator fun <T> Closure<T>.invoke(): T = call()
 operator fun <T> Closure<T>.invoke(x: Any?): T = call(x)
 
 operator fun <T> Closure<T>.invoke(vararg xs: Any?): T = call(*xs)
+
+
+inline
+fun <ConventionType : Any, ReturnType> Any.withConvention(conventionType: KClass<ConventionType>, function: ConventionType.() -> ReturnType): ReturnType =
+    when (this) {
+        is HasConvention -> convention.getPlugin(conventionType).run(function)
+        else -> throw IllegalStateException("Object `$this` doesn't support conventions!")
+    }
 
 
 inline
