@@ -17,7 +17,12 @@
 package org.gradle.kotlin.dsl
 
 import groovy.lang.Closure
+import groovy.lang.GroovyObject
+import groovy.lang.MetaClass
+
 import org.gradle.internal.Cast.uncheckedCast
+
+import org.codehaus.groovy.runtime.InvokerHelper.getMetaClass
 
 
 /**
@@ -116,3 +121,112 @@ operator fun <T> Closure<T>.invoke(): T = call()
 operator fun <T> Closure<T>.invoke(x: Any?): T = call(x)
 
 operator fun <T> Closure<T>.invoke(vararg xs: Any?): T = call(*xs)
+
+
+inline
+fun <T> Any.withGroovyBuilder(builder: GroovyBuilderScope.() -> T): T =
+    GroovyBuilderScope.of(this).builder()
+
+
+interface GroovyBuilderScope : GroovyObject {
+
+    companion object {
+
+        fun of(value: Any): GroovyBuilderScope =
+            when (value) {
+                is GroovyObject -> GroovyBuilderScopeForGroovyObject(value)
+                else -> GroovyBuilderScopeForRegularObject(value)
+            }
+    }
+
+    operator fun String.invoke(vararg arguments: Any?): Any?
+
+    operator fun <T> String.invoke(vararg arguments: Any?, builder: GroovyBuilderScope.() -> T): Any?
+
+    operator fun <T> String.invoke(builder: GroovyBuilderScope.() -> T): Any?
+
+    operator fun String.invoke(vararg keywordArguments: Pair<String, Any?>): Any?
+
+    operator fun <T> String.invoke(vararg keywordArguments: Pair<String, Any?>, builder: GroovyBuilderScope.() -> T): Any?
+}
+
+
+private
+class GroovyBuilderScopeForGroovyObject(private val receiver: GroovyObject) : GroovyBuilderScope, GroovyObject by receiver {
+
+    override fun String.invoke(vararg arguments: Any?): Any? =
+        dispatch(this, *arguments)
+
+    override fun <T> String.invoke(vararg arguments: Any?, builder: GroovyBuilderScope.() -> T): Any? =
+        dispatch(this, *arguments, closureFor(builder))
+
+    override fun <T> String.invoke(builder: GroovyBuilderScope.() -> T): Any? =
+        dispatch(this, closureFor(builder))
+
+    override fun <T> String.invoke(vararg keywordArguments: Pair<String, Any?>, builder: GroovyBuilderScope.() -> T): Any? =
+        dispatch(this, keywordArguments.toMap(), closureFor(builder))
+
+    override fun String.invoke(vararg keywordArguments: Pair<String, Any?>): Any? =
+        dispatch(this, keywordArguments.toMap())
+
+    private
+    fun dispatch(methodName: String, vararg arguments: Any?): Any? =
+        receiver.invokeMethod(methodName, arguments)
+
+    private
+    fun <T> closureFor(builder: GroovyBuilderScope.() -> T): Closure<Any?> =
+        object : Closure<Any?>(receiver, receiver) {
+            @Suppress("unused")
+            fun doCall() = delegate.withGroovyBuilder(builder)
+        }
+}
+
+
+private
+class GroovyBuilderScopeForRegularObject(private val receiver: Any) : GroovyBuilderScope {
+
+    private
+    val groovyMetaClass: MetaClass by lazy {
+        getMetaClass(receiver)
+    }
+
+    override fun invokeMethod(name: String, args: Any?): Any? =
+        groovyMetaClass.invokeMethod(receiver, name, args)
+
+    override fun setProperty(propertyName: String, newValue: Any?) =
+        groovyMetaClass.setProperty(receiver, propertyName, newValue)
+
+    override fun getProperty(propertyName: String): Any =
+        groovyMetaClass.getProperty(receiver, propertyName)
+
+    override fun setMetaClass(metaClass: MetaClass?) =
+        throw IllegalStateException()
+
+    override fun getMetaClass(): MetaClass = groovyMetaClass
+
+    override fun String.invoke(vararg arguments: Any?): Any? =
+        dispatch(this, *arguments)
+
+    override fun <T> String.invoke(vararg arguments: Any?, builder: GroovyBuilderScope.() -> T): Any? =
+        dispatch(this, *arguments, closureFor(builder))
+
+    override fun <T> String.invoke(builder: GroovyBuilderScope.() -> T): Any? =
+        dispatch(this, closureFor(builder))
+
+    override fun <T> String.invoke(vararg keywordArguments: Pair<String, Any?>, builder: GroovyBuilderScope.() -> T): Any? =
+        dispatch(this, keywordArguments.toMap(), closureFor(builder))
+
+    override fun String.invoke(vararg keywordArguments: Pair<String, Any?>): Any? =
+        dispatch(this, keywordArguments.toMap())
+
+    private
+    fun dispatch(methodName: String, vararg arguments: Any?): Any? =
+        groovyMetaClass.invokeMethod(receiver, methodName, arguments)
+
+    private
+    fun <T> closureFor(builder: GroovyBuilderScope.() -> T): Closure<Any?> =
+        object : Closure<Any?>(receiver, receiver) {
+            @Suppress("unused")
+            fun doCall() = delegate.withGroovyBuilder(builder)
+        }
+}

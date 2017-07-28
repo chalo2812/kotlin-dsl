@@ -1,6 +1,11 @@
 package org.gradle.kotlin.dsl
 
+import com.nhaarman.mockito_kotlin.any
+import com.nhaarman.mockito_kotlin.doReturn
+import com.nhaarman.mockito_kotlin.mock
+import com.nhaarman.mockito_kotlin.verify
 import groovy.lang.Closure
+import groovy.lang.GroovyObject
 
 import org.hamcrest.CoreMatchers.equalTo
 import org.hamcrest.MatcherAssert.assertThat
@@ -88,4 +93,25 @@ class GroovyInteroperabilityTest {
             invocations,
             equalTo(listOf("c0", "c1(42)", "c2(11, 33)")))
     }
+
+    @Test
+    fun `#configureWithGroovy can handle keyword arguments`() {
+
+        val expectedInvokeResult = Any()
+        val delegate = mock<GroovyObject> {
+            on { invokeMethod(any(), any()) } doReturn expectedInvokeResult
+        }
+
+        val expectedBuilderResult = Any()
+        val actualResult = delegate.withGroovyBuilder {
+            val invokeResult = "node"("stringValue" to "42", "intValue" to 42)
+            assertThat(invokeResult, equalTo(expectedInvokeResult))
+            expectedBuilderResult
+        }
+
+        val expectedKeywordArguments = mapOf("stringValue" to "42", "intValue" to 42)
+        verify(delegate).invokeMethod("node", arrayOf(expectedKeywordArguments))
+        assertThat(actualResult, equalTo(expectedBuilderResult))
+    }
 }
+
